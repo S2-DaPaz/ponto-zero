@@ -43,6 +43,7 @@ SUPERSAMPLE = 4  # desenha em 4x e reduz com filtro BOX: antialiasing exato, bor
 
 @dataclass
 class Crosshair:
+    """Configuração completa de uma mira; os tamanhos são em pixels de tela."""
     style: str = "dot"
     size: int = 4
     thickness: int = 2
@@ -87,9 +88,11 @@ class Crosshair:
         return cls(**values)
 
     def to_dict(self) -> dict:
+        """Dicionário serializável em JSON."""
         return asdict(self)
 
     def copy(self, **changes) -> "Crosshair":
+        """Cópia com alterações, validada pelas mesmas regras de from_dict."""
         return Crosshair.from_dict({**self.to_dict(), **changes})
 
 
@@ -132,6 +135,7 @@ def _reach(c: Crosshair) -> float:
 def canvas_size(c: Crosshair) -> int:
     # A paridade do canvas acompanha a da espessura: linha ímpar em canvas ímpar cai
     # inteira em pixels, sem borrar meio pixel de cada lado.
+    """Lado do canvas quadrado que comporta a mira inteira, com a paridade certa."""
     size = 2 * math.ceil(_reach(c)) + 4
     main = c.size if c.style == "dot" else c.thickness  # a dimensão que precisa cair em pixel inteiro
     if size % 2 != main % 2:
@@ -140,6 +144,7 @@ def canvas_size(c: Crosshair) -> int:
 
 
 def _rect(d: ImageDraw.ImageDraw, x0: float, y0: float, x1: float, y1: float, g: float) -> None:
+    """Desenha um retângulo em coordenadas de pixel, expandido por `g`, no espaço supersampled."""
     k = SUPERSAMPLE
     d.rectangle(
         [round((x0 - g) * k), round((y0 - g) * k), round((x1 + g) * k) - 1, round((y1 + g) * k) - 1],
@@ -148,6 +153,7 @@ def _rect(d: ImageDraw.ImageDraw, x0: float, y0: float, x1: float, y1: float, g:
 
 
 def _disc(d: ImageDraw.ImageDraw, cx: float, cy: float, r: float, value: int = 255) -> None:
+    """Desenha um disco de raio `r` com o valor `value` (0 apaga)."""
     k = SUPERSAMPLE
     if r <= 0:
         return
@@ -155,6 +161,7 @@ def _disc(d: ImageDraw.ImageDraw, cx: float, cy: float, r: float, value: int = 2
 
 
 def _dot(d: ImageDraw.ImageDraw, c: Crosshair, cx: float, cy: float, diameter: float, g: float) -> None:
+    """Desenha um ponto redondo ou quadrado de diâmetro `diameter`, expandido por `g`."""
     if c.square_dot:
         _rect(d, cx - diameter / 2, cy - diameter / 2, cx + diameter / 2, cy + diameter / 2, g)
     else:
@@ -162,6 +169,7 @@ def _dot(d: ImageDraw.ImageDraw, c: Crosshair, cx: float, cy: float, diameter: f
 
 
 def _draw_shapes(img: Image.Image, c: Crosshair, center: float, g: float) -> None:
+    """Desenha todas as formas da mira na máscara; `g` expande cada forma (contorno)."""
     d = ImageDraw.Draw(img)
     k = SUPERSAMPLE
     cx = cy = center
@@ -214,6 +222,7 @@ def _draw_shapes(img: Image.Image, c: Crosshair, center: float, g: float) -> Non
 
 def _symmetrize(mask: Image.Image, vertical: bool) -> Image.Image:
     # As miras são simétricas, mas o rasterizador de polígono/elipse do Pillow não é.
+    """Espelha a máscara para forçar a simetria que o rasterizador não garante."""
     mask = ImageChops.lighter(mask, mask.transpose(Image.Transpose.FLIP_LEFT_RIGHT))
     if not vertical:  # estilo T não tem a linha de cima: espelhar de cima a baixo a recriaria
         return mask
@@ -221,6 +230,7 @@ def _symmetrize(mask: Image.Image, vertical: bool) -> Image.Image:
 
 
 def _hex_rgb(value: str) -> tuple[int, int, int]:
+    """Converte '#RRGGBB' em tupla RGB."""
     return int(value[1:3], 16), int(value[3:5], 16), int(value[5:7], 16)
 
 
@@ -252,6 +262,7 @@ def render(c: Crosshair) -> Image.Image:
 
 # --------------------------------------------------------------------------- compartilhar
 def to_share_code(c: Crosshair) -> str:
+    """Codifica a mira num texto curto para compartilhar (PZ1:...)."""
     raw = json.dumps(c.to_dict(), separators=(",", ":")).encode()
     return SHARE_PREFIX + base64.urlsafe_b64encode(raw).decode().rstrip("=")
 

@@ -28,6 +28,7 @@ _IGNORED_PREFIX = "cl_crosshair_dynamic_"  # sem efeito no FiveM, segundo o manu
 
 
 def _bool(value: str) -> bool:
+    """Lê booleano no formato do console: 1/true/yes/on."""
     return value.strip().lower() in ("1", "true", "yes", "on")
 
 

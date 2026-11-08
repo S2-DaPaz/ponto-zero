@@ -12,6 +12,7 @@ DEFAULT_SETTINGS = {"hotkey": "F9", "start_active": False}
 
 
 def data_dir() -> Path:
+    """Pasta de dados do programa em %APPDATA%, criada se não existir."""
     base = os.environ.get("APPDATA") or str(Path.home())
     path = Path(base) / "PontoZero"
     path.mkdir(parents=True, exist_ok=True)
@@ -19,7 +20,9 @@ def data_dir() -> Path:
 
 
 class Store:
+    """Mira atual, presets do usuário e configurações, persistidos em JSON."""
     def __init__(self, path: Path | None = None) -> None:
+        """Carrega de `path` (padrão: %APPDATA%\\PontoZero\\config.json)."""
         self.path = path or data_dir() / "config.json"
         self.current = Crosshair()
         self.presets: dict[str, Crosshair] = {}
@@ -27,6 +30,7 @@ class Store:
         self.load()
 
     def load(self) -> None:
+        """Lê o arquivo; corrompido vira .corrompido.json e o programa segue com o padrão."""
         try:
             data = json.loads(self.path.read_text(encoding="utf-8"))
         except FileNotFoundError:
@@ -44,6 +48,7 @@ class Store:
         self.settings["start_active"] = settings.get("start_active") is True
 
     def save(self) -> None:
+        """Grava o arquivo inteiro de forma atômica."""
         data = {
             "version": 1,
             "current": self.current.to_dict(),
@@ -56,12 +61,14 @@ class Store:
 
 
 def parse_presets(raw: object) -> dict[str, Crosshair]:
+    """Valida um dicionário nome -> mira vindo de fonte não confiável."""
     if not isinstance(raw, dict):
         return {}
     return {str(name)[:40]: Crosshair.from_dict(cfg) for name, cfg in raw.items() if isinstance(cfg, dict)}
 
 
 def export_presets(path: str | Path, presets: dict[str, Crosshair]) -> None:
+    """Grava presets num arquivo .json do Ponto Zero."""
     data = {"kind": FILE_KIND, "version": 1, "presets": {n: c.to_dict() for n, c in presets.items()}}
     Path(path).write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
 
@@ -81,6 +88,7 @@ def import_presets(path: str | Path) -> dict[str, Crosshair]:
 
 
 def unique_name(name: str, taken) -> str:
+    """Nome livre a partir de `name`, acrescentando (2), (3)... se já existir."""
     name = name.strip()[:40] or "Minha mira"
     if name not in taken:
         return name

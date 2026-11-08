@@ -31,11 +31,13 @@ ERROR_ALREADY_EXISTS = 183
 
 
 class BLENDFUNCTION(ctypes.Structure):
+    """Estrutura BLENDFUNCTION do Win32 para UpdateLayeredWindow."""
     _fields_ = [("BlendOp", ctypes.c_ubyte), ("BlendFlags", ctypes.c_ubyte),
                 ("SourceConstantAlpha", ctypes.c_ubyte), ("AlphaFormat", ctypes.c_ubyte)]
 
 
 class BITMAPINFOHEADER(ctypes.Structure):
+    """Cabeçalho de bitmap DIB do Win32."""
     _fields_ = [("biSize", w.DWORD), ("biWidth", w.LONG), ("biHeight", w.LONG),
                 ("biPlanes", w.WORD), ("biBitCount", w.WORD), ("biCompression", w.DWORD),
                 ("biSizeImage", w.DWORD), ("biXPelsPerMeter", w.LONG), ("biYPelsPerMeter", w.LONG),
@@ -43,6 +45,7 @@ class BITMAPINFOHEADER(ctypes.Structure):
 
 
 class BITMAPINFO(ctypes.Structure):
+    """BITMAPINFO do Win32 (cabeçalho mais a tabela de cores, não usada em 32 bits)."""
     _fields_ = [("bmiHeader", BITMAPINFOHEADER), ("bmiColors", w.DWORD * 3)]
 
 
@@ -100,20 +103,25 @@ def already_running(name: str) -> bool:
 
 
 def screen_size() -> tuple[int, int]:
+    """Resolução da tela principal em pixels físicos."""
     return user32.GetSystemMetrics(SM_CXSCREEN), user32.GetSystemMetrics(SM_CYSCREEN)
 
 
 def key_down(vk: int) -> bool:
+    """Se a tecla está pressionada agora, mesmo com outro programa em foco."""
     return bool(user32.GetAsyncKeyState(vk) & 0x8000)
 
 
 def _to_premultiplied_bgra(img: Image.Image) -> bytes:
+    """Converte RGBA do Pillow para BGRA pré-multiplicado, o formato do UpdateLayeredWindow."""
     r, g, b, a = img.convert("RGBa").split()  # "RGBa" = RGB pré-multiplicado pelo alfa
     return Image.merge("RGBA", (b, g, r, a)).tobytes()
 
 
 class Overlay:
+    """Janela da mira sobre o jogo."""
     def __init__(self) -> None:
+        """Cria a janela escondida; levanta OSError se o Windows recusar."""
         self.hwnd = user32.CreateWindowExW(
             WS_EX_LAYERED | WS_EX_TRANSPARENT | WS_EX_TOPMOST | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE,
             "Static", "Ponto Zero Overlay", WS_POPUP, 0, 0, 1, 1, None, None, None, None,
@@ -153,11 +161,13 @@ class Overlay:
             user32.ReleaseDC(None, screen_dc)
 
     def show(self) -> None:
+        """Mostra a janela sem tirar o foco do jogo."""
         user32.ShowWindow(self.hwnd, SW_SHOWNOACTIVATE)
         self.visible = True
         self.raise_to_top()
 
     def hide(self) -> None:
+        """Esconde a janela."""
         user32.ShowWindow(self.hwnd, SW_HIDE)
         self.visible = False
 
@@ -167,6 +177,7 @@ class Overlay:
             user32.SetWindowPos(self.hwnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE)
 
     def destroy(self) -> None:
+        """Destrói a janela do Windows."""
         if self.hwnd:
             user32.DestroyWindow(self.hwnd)
             self.hwnd = None

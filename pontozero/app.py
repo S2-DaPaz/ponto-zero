@@ -39,15 +39,18 @@ BACKGROUNDS = ("Cena", "Escuro", "Claro")
 
 
 def resource(rel: str) -> Path:
+    """Caminho de um arquivo empacotado: dentro do exe (PyInstaller) ou na pasta do projeto."""
     base = getattr(sys, "_MEIPASS", Path(__file__).resolve().parent.parent)
     return Path(base) / rel
 
 
 def font(size: int = 13, weight: str = "normal") -> ctk.CTkFont:
+    """Fonte da interface (Segoe UI) no tamanho e peso pedidos."""
     return ctk.CTkFont(family=FONT, size=size, weight=weight)
 
 
 def make_background(mode: str, width: int, height: int) -> Image.Image:
+    """Fundo da pré-visualização: cor lisa escura/clara ou uma cena de rua genérica."""
     if mode == "Escuro":
         return Image.new("RGB", (width, height), (21, 24, 31))
     if mode == "Claro":
@@ -58,6 +61,7 @@ def make_background(mode: str, width: int, height: int) -> Image.Image:
     horizon = int(height * 0.62)
 
     def lerp(a, b, t):
+        """Interpola linearmente duas cores RGB."""
         return tuple(int(x + (y - x) * t) for x, y in zip(a, b))
 
     for y in range(height):
@@ -76,7 +80,9 @@ def make_background(mode: str, width: int, height: int) -> Image.Image:
 
 # --------------------------------------------------------------------------- controles
 class SliderRow(ctk.CTkFrame):
+    """Linha de ajuste numérico: rótulo, valor, slider e botões −/+ para passo de 1."""
     def __init__(self, master, app: "App", label: str, key: str, unit: str = "px") -> None:
+        """Monta a linha para o campo `key` da mira, com a faixa de LIMITS."""
         super().__init__(master, fg_color="transparent")
         self.app, self.key, self.unit = app, key, unit
         self.lo, self.hi = LIMITS[key]
@@ -95,24 +101,30 @@ class SliderRow(ctk.CTkFrame):
         ctk.CTkButton(self, text="+", command=lambda: self.nudge(1), **step).grid(row=1, column=3, pady=(4, 0))
 
     def nudge(self, delta: int) -> None:
+        """Soma `delta` ao valor atual (botões −/+)."""
         self.set(getattr(self.app.cfg, self.key) + delta)
 
     def set(self, value: int) -> None:
+        """Limita o valor à faixa e aplica na mira se mudou."""
         value = max(self.lo, min(self.hi, int(value)))
         self.show(value)
         if value != getattr(self.app.cfg, self.key):
             self.app.update_cfg(**{self.key: value})
 
     def show(self, value: int) -> None:
+        """Atualiza slider e rótulo sem disparar mudança na mira."""
         self.slider.set(value)
         self.badge.configure(text=f"{value}{self.unit}")
 
     def sync(self, cfg: Crosshair) -> None:
+        """Reflete na tela o valor atual da mira."""
         self.show(getattr(cfg, self.key))
 
 
 class ColorRow(ctk.CTkFrame):
+    """Seletor de cor: paleta, seletor do sistema e campo hexadecimal."""
     def __init__(self, master, app: "App", label: str, key: str) -> None:
+        """Monta a paleta para o campo de cor `key` da mira."""
         super().__init__(master, fg_color="transparent")
         self.app, self.key = app, key
         ctk.CTkLabel(self, text=label, font=font(13), text_color=TEXT).pack(anchor="w")
@@ -134,11 +146,13 @@ class ColorRow(ctk.CTkFrame):
         self.entry.bind("<FocusOut>", lambda _e: self.choose(self.entry.get()))
 
     def pick(self) -> None:
+        """Abre o seletor de cor do Windows."""
         _rgb, hex_color = colorchooser.askcolor(color=getattr(self.app.cfg, self.key), title="Escolher cor")
         if hex_color:
             self.choose(hex_color)
 
     def choose(self, color: str) -> None:
+        """Aplica a cor se o hexadecimal for válido; senão devolve o campo ao valor atual."""
         color = color.strip()
         if not color.startswith("#"):
             color = "#" + color
@@ -149,6 +163,7 @@ class ColorRow(ctk.CTkFrame):
         self.app.update_cfg(**{self.key: color.upper()})
 
     def sync(self, cfg: Crosshair) -> None:
+        """Marca a cor selecionada na paleta e mostra o hexadecimal."""
         current = getattr(cfg, self.key)
         for color, button in self.swatches.items():
             selected = color == current
@@ -158,13 +173,16 @@ class ColorRow(ctk.CTkFrame):
 
 
 class Switch(ctk.CTkSwitch):
+    """Interruptor ligado a um campo booleano da mira."""
     def __init__(self, master, app: "App", label: str, key: str) -> None:
+        """Cria o interruptor para o campo `key`."""
         self.app, self.key = app, key
         super().__init__(master, text=label, font=font(13), text_color=TEXT, progress_color=ACCENT,
                          button_color=TEXT, button_hover_color="#FFFFFF", fg_color=BORDER,
                          command=lambda: app.update_cfg(**{key: bool(self.get())}))
 
     def sync(self, cfg: Crosshair) -> None:
+        """Reflete na tela o valor atual da mira."""
         self.select() if getattr(cfg, self.key) else self.deselect()
 
 
@@ -172,6 +190,7 @@ class TextDialog(ctk.CTkToplevel):
     """Diálogo com caixa de texto de várias linhas (o CTkInputDialog só aceita uma linha)."""
 
     def __init__(self, master, title: str, prompt: str) -> None:
+        """Monta o diálogo com o texto de instrução `prompt`."""
         super().__init__(master, fg_color=BG)
         self.title(title)
         self.geometry("560x340")
@@ -193,22 +212,27 @@ class TextDialog(ctk.CTkToplevel):
         self.after(100, self._focus)
 
     def _focus(self) -> None:
+        """Traz o diálogo para frente e prende o foco nele."""
         self.lift()
         self.grab_set()
         self.box.focus_set()
 
     def _ok(self) -> None:
+        """Guarda o texto digitado e fecha."""
         self.result = self.box.get("1.0", "end").strip()
         self.destroy()
 
     def get(self) -> str | None:
+        """Espera o diálogo fechar e devolve o texto, ou None se cancelado."""
         self.wait_window()
         return self.result
 
 
 # --------------------------------------------------------------------------- aplicativo
 class App(ctk.CTk):
+    """Janela principal: editor, presets, configurações, overlay e atalho global."""
     def __init__(self) -> None:
+        """Carrega a configuração, cria o overlay e monta as três páginas."""
         super().__init__(fg_color=BG)
         self.title(f"{APP_NAME} — mira fixa")
         self.geometry("1100x720")
@@ -250,6 +274,7 @@ class App(ctk.CTk):
 
     # ---------------------------------------------------------------- estrutura
     def _build_sidebar(self) -> None:
+        """Barra lateral com marca, navegação e status da mira."""
         bar = ctk.CTkFrame(self, fg_color=SIDEBAR, corner_radius=0, width=220)
         bar.grid(row=0, column=0, sticky="nsw")
         bar.grid_propagate(False)
@@ -288,6 +313,7 @@ class App(ctk.CTk):
             row=7, column=0, padx=20, pady=(0, 14), sticky="w")
 
     def _page(self, title: str, subtitle: str) -> ctk.CTkFrame:
+        """Página vazia com título e subtítulo."""
         page = ctk.CTkFrame(self, fg_color=BG, corner_radius=0)
         page.columnconfigure(0, weight=1)
         ctk.CTkLabel(page, text=title, font=font(22, "bold"), text_color=TEXT).grid(row=0, column=0, padx=28,
@@ -297,9 +323,11 @@ class App(ctk.CTk):
         return page
 
     def _card(self, master) -> ctk.CTkFrame:
+        """Cartão com o fundo e a borda padrão."""
         return ctk.CTkFrame(master, fg_color=CARD, corner_radius=12, border_width=1, border_color=BORDER)
 
     def _build_editor(self) -> ctk.CTkFrame:
+        """Página do editor: pré-visualização, cor, abas de ajuste e barra de ações."""
         page = self._page("Editor de mira", "Ajuste cada detalhe. A mira no jogo muda na hora.")
         page.rowconfigure(2, weight=1)
         body = ctk.CTkFrame(page, fg_color="transparent")
@@ -363,16 +391,19 @@ class App(ctk.CTk):
         return page
 
     def _tab_body(self, tab) -> ctk.CTkFrame:
+        """Área rolável dentro de uma aba."""
         frame = ctk.CTkScrollableFrame(tab, fg_color="transparent", scrollbar_button_color=BORDER)
         frame.pack(fill="both", expand=True)
         return frame
 
     def _add(self, control, pady=(0, 14)):
+        """Empacota um controle e o registra para ser sincronizado com a mira."""
         control.pack(fill="x", padx=8, pady=pady)
         self.controls.append(control)
         return control
 
     def _build_style_tab(self, tab) -> None:
+        """Aba Estilo: botões dos seis estilos e ajustes de forma."""
         body = self._tab_body(tab)
         ctk.CTkLabel(body, text="Estilo da mira", font=font(13), text_color=TEXT).pack(anchor="w", padx=8)
         grid = ctk.CTkFrame(body, fg_color="transparent")
@@ -400,6 +431,7 @@ class App(ctk.CTk):
         self._add(Switch(body, self, "Estilo T (cruz sem a linha de cima)", "t_style"))
 
     def _build_outline_tab(self, tab) -> None:
+        """Aba Contorno: liga/desliga, espessura, cor e opacidade do contorno."""
         body = self._tab_body(tab)
         self._add(Switch(body, self, "Contorno (melhora a leitura em fundo claro)", "outline"), pady=(0, 16))
         self._add(SliderRow(body, self, "Espessura do contorno", "outline_thickness"))
@@ -407,6 +439,7 @@ class App(ctk.CTk):
         self._add(SliderRow(body, self, "Opacidade do contorno", "outline_opacity", unit="%"))
 
     def _build_position_tab(self, tab) -> None:
+        """Aba Posição: deslocamento da mira em relação ao centro da tela."""
         body = self._tab_body(tab)
         ctk.CTkLabel(body, text="A mira fica no centro da tela principal. Desloque só se o centro do\n"
                                 "jogo não bater com o da tela (ex.: jogo em janela).",
@@ -418,6 +451,7 @@ class App(ctk.CTk):
                       command=lambda: self.update_cfg(offset_x=0, offset_y=0)).pack(anchor="w", padx=8)
 
     def _build_presets(self) -> ctk.CTkFrame:
+        """Página Minhas miras: barra de importação/exportação e lista de presets."""
         page = self._page("Minhas miras", "Seus presets e os que vêm com o programa. Importe, exporte e compartilhe.")
         page.rowconfigure(3, weight=1)
         bar = ctk.CTkFrame(page, fg_color="transparent")
@@ -437,6 +471,7 @@ class App(ctk.CTk):
         return page
 
     def refresh_presets(self) -> None:
+        """Recria a lista de presets (os do programa primeiro, depois os do usuário)."""
         for child in self.preset_list.winfo_children():
             child.destroy()
         entries = [(n, c, True) for n, c in BUILTIN_PRESETS.items()] + \
@@ -471,6 +506,7 @@ class App(ctk.CTk):
                 ctk.CTkLabel(card, text="", width=96).grid(row=0, column=5, rowspan=2, padx=(0, 12))
 
     def _build_settings(self) -> ctk.CTkFrame:
+        """Página de configurações: atalho, ligar ao abrir e dica do modo sem bordas."""
         page = self._page("Configurações", "Atalho, inicialização e dicas para o FiveM.")
         body = ctk.CTkFrame(page, fg_color="transparent")
         body.grid(row=2, column=0, padx=28, sticky="new")
@@ -518,6 +554,7 @@ class App(ctk.CTk):
 
     # ---------------------------------------------------------------- estado
     def show_page(self, key: str) -> None:
+        """Mostra a página `key` e destaca o item da navegação."""
         for name, page in self.pages.items():
             page.grid_forget()
             self.nav[name].configure(fg_color="transparent", text_color=MUTED, border_color=SIDEBAR)
@@ -527,10 +564,12 @@ class App(ctk.CTk):
             self.refresh_presets()
 
     def update_cfg(self, **changes) -> None:
+        """Aplica mudanças na mira e atualiza tudo que depende dela."""
         self.cfg = self.cfg.copy(**changes)
         self.sync_all()
 
     def sync_all(self) -> None:
+        """Sincroniza controles, prévia e overlay com a mira atual, e agenda o salvamento."""
         for control in self.controls:
             control.sync(self.cfg)
         for style, button in self.style_buttons.items():
@@ -545,6 +584,7 @@ class App(ctk.CTk):
         self._schedule_save()
 
     def draw_preview(self) -> None:
+        """Redesenha a pré-visualização no tamanho físico da tela, com zoom e deslocamento."""
         scale = self.preview._get_widget_scaling()
         width, height = int(PREVIEW_W * scale), int(PREVIEW_H * scale)
         key = (self.background, width, height)
@@ -561,14 +601,17 @@ class App(ctk.CTk):
         self.preview.configure(image=ctk.CTkImage(img, size=(PREVIEW_W, PREVIEW_H)))
 
     def _set_zoom(self, value: str) -> None:
+        """Troca o zoom da pré-visualização."""
         self.zoom = ZOOMS[value]
         self.draw_preview()
 
     def _set_background(self, value: str) -> None:
+        """Troca o fundo da pré-visualização."""
         self.background = value
         self.draw_preview()
 
     def set_active(self, active: bool) -> None:
+        """Liga ou desliga a mira no jogo."""
         if self.overlay is None:
             return
         self.active = active
@@ -580,6 +623,7 @@ class App(ctk.CTk):
         self._update_status()
 
     def _update_status(self) -> None:
+        """Atualiza o botão principal e o status da barra lateral."""
         key = self.store.settings["hotkey"]
         if self.active:
             self.toggle_btn.configure(text=f"DESATIVAR MIRA   ·   {key}", fg_color=CARD_2, hover_color=BORDER,
@@ -594,11 +638,13 @@ class App(ctk.CTk):
         self.status_hint.configure(text=f"Atalho: {key}")
 
     def _schedule_save(self) -> None:
+        """Salva 600 ms depois da última mudança, para não gravar a cada passo do slider."""
         if self._save_job:
             self.after_cancel(self._save_job)
         self._save_job = self.after(600, self._save)
 
     def _save(self) -> None:
+        """Grava a configuração e avisa se falhar."""
         self._save_job = None
         try:
             self.store.save()
@@ -606,14 +652,17 @@ class App(ctk.CTk):
             messagebox.showerror(APP_NAME, f"Não foi possível salvar as configurações:\n{exc}")
 
     def _set_setting(self, key: str, value) -> None:
+        """Altera uma configuração e agenda o salvamento."""
         self.store.settings[key] = value
         self._schedule_save()
 
     def set_hotkey(self, key: str) -> None:
+        """Troca a tecla de atalho."""
         self._set_setting("hotkey", key)
         self._update_status()
 
     def _poll_hotkey(self) -> None:
+        """Confere a tecla de atalho a cada 40 ms e alterna a mira na borda de descida."""
         vk = HOTKEYS.get(self.store.settings["hotkey"], HOTKEYS["F9"])
         down = key_down(vk)
         if down and not self._key_was_down:
@@ -622,21 +671,25 @@ class App(ctk.CTk):
         self.after(40, self._poll_hotkey)
 
     def _keep_on_top(self) -> None:
+        """Reafirma o overlay no topo a cada segundo."""
         if self.overlay:
             self.overlay.raise_to_top()
         self.after(1000, self._keep_on_top)
 
     # ---------------------------------------------------------------- ações
     def reset(self) -> None:
+        """Volta a mira ao padrão (ponto do GTA V)."""
         self.cfg = Crosshair()
         self.sync_all()
 
     def use_preset(self, cfg: Crosshair) -> None:
+        """Carrega um preset no editor."""
         self.cfg = cfg.copy()
         self.sync_all()
         self.show_page("editor")
 
     def save_preset(self) -> None:
+        """Pede um nome e salva a mira atual em Minhas miras."""
         name = ctk.CTkInputDialog(title="Salvar preset", text="Nome do preset:").get_input()
         if name is None or not name.strip():
             return
@@ -651,17 +704,20 @@ class App(ctk.CTk):
         messagebox.showinfo(APP_NAME, f"Preset \"{name}\" salvo em Minhas miras.")
 
     def delete_preset(self, name: str) -> None:
+        """Exclui um preset do usuário após confirmação."""
         if messagebox.askyesno(APP_NAME, f"Excluir o preset \"{name}\"?"):
             self.store.presets.pop(name, None)
             self._save()
             self.refresh_presets()
 
     def copy_code(self, cfg: Crosshair) -> None:
+        """Copia para a área de transferência o código de compartilhamento da mira."""
         self.clipboard_clear()
         self.clipboard_append(to_share_code(cfg))
         messagebox.showinfo(APP_NAME, "Código da mira copiado. Cole no Discord ou envie para um amigo.")
 
     def paste_code(self) -> None:
+        """Adiciona uma mira a partir de um código PZ1 colado."""
         code = ctk.CTkInputDialog(title="Colar código", text="Cole o código da mira (começa com PZ1:)").get_input()
         if not code:
             return
@@ -677,10 +733,12 @@ class App(ctk.CTk):
         messagebox.showinfo(APP_NAME, f"Adicionada como \"{name}\".")
 
     def _ask_export_path(self, suggested: str) -> str:
+        """Pergunta onde salvar o arquivo exportado."""
         return filedialog.asksaveasfilename(title="Exportar", defaultextension=".json", initialfile=suggested,
                                             filetypes=[("Preset do Ponto Zero", "*.json")])
 
     def _export(self, presets: dict, suggested: str) -> None:
+        """Exporta presets para um arquivo escolhido pelo usuário."""
         path = self._ask_export_path(suggested)
         if not path:
             return
@@ -692,19 +750,23 @@ class App(ctk.CTk):
         messagebox.showinfo(APP_NAME, f"Exportado para:\n{path}")
 
     def export_current(self) -> None:
+        """Exporta a mira do editor."""
         self._export({"Minha mira": self.cfg}, "minha-mira.json")
 
     def export_one(self, name: str, cfg: Crosshair) -> None:
+        """Exporta um preset, com nome de arquivo seguro."""
         safe = "".join(ch if ch.isalnum() or ch in " -_" else "_" for ch in name).strip() or "mira"
         self._export({name: cfg}, f"{safe}.json")
 
     def export_all(self) -> None:
+        """Exporta todos os presets do usuário num arquivo só."""
         if not self.store.presets:
             messagebox.showinfo(APP_NAME, "Você ainda não salvou nenhum preset.")
             return
         self._export(dict(self.store.presets), "minhas-miras.json")
 
     def import_fivem(self) -> None:
+        """Converte os comandos de F8 do FiveM colados pelo usuário e salva como preset."""
         text = TextDialog(self, "Importar mira do FiveM",
                           "Cole os comandos que você usava no F8 (cl_crosshairsize, cl_crosshairgap...).\n"
                           "Pode colar tudo numa linha com ; ou um comando por linha.").get()
@@ -725,6 +787,7 @@ class App(ctk.CTk):
                                       "diferente da que você tinha, ajuste no editor." + (f"\n\n{detail}" if detail else ""))
 
     def import_file(self) -> None:
+        """Importa presets de um arquivo .json do Ponto Zero."""
         path = filedialog.askopenfilename(title="Importar presets", filetypes=[("Preset do Ponto Zero", "*.json")])
         if not path:
             return
@@ -740,6 +803,7 @@ class App(ctk.CTk):
         messagebox.showinfo(APP_NAME, f"{len(imported)} preset(s) importado(s).")
 
     def on_close(self) -> None:
+        """Salva, remove o overlay e fecha."""
         if self._save_job:
             self.after_cancel(self._save_job)
         try:
@@ -752,6 +816,7 @@ class App(ctk.CTk):
 
 
 def main() -> None:
+    """Ponto de entrada: DPI, instância única e janela principal."""
     enable_dpi_awareness()
     if already_running("Local\\PontoZero.SingleInstance"):
         ctypes.windll.user32.MessageBoxW(None, "O Ponto Zero já está aberto.", APP_NAME, 0x40)
