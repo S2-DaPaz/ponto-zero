@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import ctypes
 import os
+import queue
 import sys
 from pathlib import Path
 from tkinter import colorchooser, filedialog, messagebox
@@ -14,8 +15,10 @@ from . import APP_NAME, VERSION
 from .crosshair import (BUILTIN_PRESETS, LIMITS, STYLE_LABELS, STYLES, Crosshair, from_share_code, render,
                         to_share_code)
 from .fivem import to_crosshair as fivem_to_crosshair
-from .overlay import HOTKEYS, Overlay, already_running, enable_dpi_awareness, key_down, screen_size
+from .overlay import (HOTKEYS, Overlay, ShowSignal, already_running, enable_dpi_awareness, key_down, screen_size,
+                      signal_show)
 from .storage import Store, data_dir, export_presets, import_presets, unique_name
+from .tray import Tray
 
 # --------------------------------------------------------------------------- identidade visual
 BG = "#0B0D12"
@@ -34,6 +37,8 @@ FONT = "Segoe UI"
 PALETTE = ["#FFFFFF", "#000000", "#3DF5A7", "#FACC15", "#FF8A00",
            "#FF4D6D", "#FF4DD8", "#A855F7", "#3B82F6", "#22D3EE"]
 PREVIEW_W, PREVIEW_H = 420, 232
+SINGLE_INSTANCE = "Local\\PontoZero.SingleInstance"
+SHOW_SIGNAL = "Local\\PontoZero.Show"
 ZOOMS = {"1x": 1, "2x": 2, "4x": 4}
 BACKGROUNDS = ("Cena", "Escuro", "Claro")
 
@@ -231,8 +236,9 @@ class TextDialog(ctk.CTkToplevel):
 # --------------------------------------------------------------------------- aplicativo
 class App(ctk.CTk):
     """Janela principal: editor, presets, configurações, overlay e atalho global."""
-    def __init__(self) -> None:
-        """Carrega a configuração, cria o overlay e monta as três páginas."""
+    def __init__(self, show_signal: ShowSignal | None = None) -> None:
+        """Carrega a configuração, cria overlay e ícone da bandeja e monta as três páginas.
+        `show_signal` é o pedido de outra execução do exe para mostrar a janela."""
         super().__init__(fg_color=BG)
         self.title(f"{APP_NAME} — mira fixa")
         self.geometry("1100x720")
@@ -251,12 +257,20 @@ class App(ctk.CTk):
         self._bg_cache = {}
         self._save_job = None
         self._key_was_down = False
+        self._poll_job = None
+        self._quitting = False
+        self.show_signal = show_signal
 
         try:
             self.overlay = Overlay()
         except OSError as exc:
             self.overlay = None
             messagebox.showerror(APP_NAME, f"Não foi possível criar o overlay da mira:\n{exc}")
+        try:
+            tray_image = Image.open(icon).convert("RGBA") if icon.exists() else render(Crosshair(color=ACCENT))
+            self.tray = Tray(tray_image, APP_NAME)
+        except Exception:  # qualquer falha do ícone: sem bandeja, o X volta a fechar de verdade
+            self.tray = None
 
         self.columnconfigure(1, weight=1)
         self.rowconfigure(0, weight=1)
@@ -266,8 +280,8 @@ class App(ctk.CTk):
         self.show_page("editor")
         self.sync_all()
 
-        self.protocol("WM_DELETE_WINDOW", self.on_close)
-        self.after(40, self._poll_hotkey)
+        self.protocol("WM_DELETE_WINDOW", self.hide_to_tray)
+        self._poll_job = self.after(40, self._poll)
         self.after(1000, self._keep_on_top)
         if self.store.settings["start_active"]:
             self.set_active(True)
@@ -636,6 +650,8 @@ class App(ctk.CTk):
             self.status_dot.configure(text_color=MUTED)
             self.status_text.configure(text="Mira desligada")
         self.status_hint.configure(text=f"Atalho: {key}")
+        if self.tray:
+            self.tray.set_title(f"{APP_NAME} · mira {'ativa' if self.active else 'desligada'} ({key})")
 
     def _schedule_save(self) -> None:
         """Salva 600 ms depois da última mudança, para não gravar a cada passo do slider."""
@@ -661,14 +677,34 @@ class App(ctk.CTk):
         self._set_setting("hotkey", key)
         self._update_status()
 
-    def _poll_hotkey(self) -> None:
-        """Confere a tecla de atalho a cada 40 ms e alterna a mira na borda de descida."""
-        vk = HOTKEYS.get(self.store.settings["hotkey"], HOTKEYS["F9"])
-        down = key_down(vk)
-        if down and not self._key_was_down:
-            self.set_active(not self.active)
-        self._key_was_down = down
-        self.after(40, self._poll_hotkey)
+    def _poll(self) -> None:
+        """A cada 40 ms: tecla de atalho (alterna na borda de descida), pedido de outra execução
+        do exe para mostrar a janela e cliques no ícone da bandeja. Tudo roda na thread do Tk."""
+        try:
+            vk = HOTKEYS.get(self.store.settings["hotkey"], HOTKEYS["F9"])
+            down = key_down(vk)
+            if down and not self._key_was_down:
+                self.set_active(not self.active)
+            self._key_was_down = down
+            if self.show_signal and self.show_signal.poll():
+                self.show_window()
+            while self.tray:
+                try:
+                    command = self.tray.commands.get_nowait()
+                except queue.Empty:
+                    break
+                if command == "quit":
+                    self.quit_app()
+                    return
+                if command == "show":
+                    self.show_window()
+                elif command == "toggle":
+                    self.set_active(not self.active)
+        finally:
+            # Reagenda mesmo se algo acima falhar: com a janela escondida, este laço é o único
+            # caminho de volta (menu da bandeja e reabrir o exe). Depois de sair, não reagenda.
+            if not self._quitting:
+                self._poll_job = self.after(40, self._poll)
 
     def _keep_on_top(self) -> None:
         """Reafirma o overlay no topo a cada segundo."""
@@ -802,28 +838,55 @@ class App(ctk.CTk):
         self.refresh_presets()
         messagebox.showinfo(APP_NAME, f"{len(imported)} preset(s) importado(s).")
 
-    def on_close(self) -> None:
-        """Salva, remove o overlay e fecha."""
-        if self._save_job:
-            self.after_cancel(self._save_job)
+    def hide_to_tray(self) -> None:
+        """X da janela: esconde na bandeja e mantém mira e atalho. Sem bandeja, fecha de vez,
+        para o programa nunca ficar invisível sem caminho de volta."""
+        if not (self.tray and self.tray.ready()):
+            self.quit_app()
+            return
+        self.withdraw()
+
+    def show_window(self) -> None:
+        """Traz a janela de volta da bandeja ou da barra de tarefas, na frente das outras."""
+        self.deiconify()
+        self.lift()
+        self.attributes("-topmost", True)  # o Windows só deixa a janela passar à frente assim
+        self.after(200, lambda: self.attributes("-topmost", False))
+        self.focus_force()
+
+    def quit_app(self) -> None:
+        """Salva, remove o overlay e o ícone da bandeja, e encerra o programa."""
+        self._quitting = True
+        for job in (self._save_job, self._poll_job):
+            if job:
+                self.after_cancel(job)
         try:
             self.store.save()
         except OSError:
             pass
         if self.overlay:
             self.overlay.destroy()
+        if self.tray:
+            self.tray.stop()
         self.destroy()
 
 
 def main() -> None:
     """Ponto de entrada: DPI, instância única e janela principal."""
     enable_dpi_awareness()
-    if already_running("Local\\PontoZero.SingleInstance"):
-        ctypes.windll.user32.MessageBoxW(None, "O Ponto Zero já está aberto.", APP_NAME, 0x40)
+    if already_running(SINGLE_INSTANCE):
+        # Já aberto, talvez escondido na bandeja: pede para a janela aparecer.
+        if not signal_show(SHOW_SIGNAL):
+            ctypes.windll.user32.MessageBoxW(None, "O Ponto Zero já está aberto.", APP_NAME, 0x40)
         return
+    try:
+        # Logo depois do mutex: uma segunda execução nunca encontra o mutex sem o evento.
+        show_signal = ShowSignal(SHOW_SIGNAL)
+    except OSError:
+        show_signal = None  # sem ele, reabrir o exe só avisa que já está aberto
     try:
         ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("PontoZero.MiraFixa")
     except (AttributeError, OSError):
         pass
     ctk.set_appearance_mode("dark")
-    App().mainloop()
+    App(show_signal).mainloop()
