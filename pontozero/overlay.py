@@ -76,6 +76,18 @@ gdi32.DeleteObject.argtypes = [w.HGDIOBJ]
 gdi32.DeleteDC.argtypes = [w.HDC]
 kernel32.CreateMutexW.restype = w.HANDLE
 kernel32.CreateMutexW.argtypes = [w.LPVOID, w.BOOL, w.LPCWSTR]
+kernel32.CreateEventW.restype = w.HANDLE
+kernel32.CreateEventW.argtypes = [w.LPVOID, w.BOOL, w.BOOL, w.LPCWSTR]
+kernel32.OpenEventW.restype = w.HANDLE
+kernel32.OpenEventW.argtypes = [w.DWORD, w.BOOL, w.LPCWSTR]
+kernel32.SetEvent.argtypes = [w.HANDLE]
+kernel32.WaitForSingleObject.argtypes = [w.HANDLE, w.DWORD]
+kernel32.WaitForSingleObject.restype = w.DWORD
+kernel32.CloseHandle.argtypes = [w.HANDLE]
+EVENT_MODIFY_STATE = 0x0002
+WAIT_OBJECT_0 = 0
+ASFW_ANY = 0xFFFFFFFF
+user32.AllowSetForegroundWindow.argtypes = [w.DWORD]
 
 # Teclas de atalho aceitas: nome exibido -> virtual-key code.
 HOTKEYS = {f"F{i}": 0x6F + i for i in range(1, 13)}
@@ -100,6 +112,35 @@ def already_running(name: str) -> bool:
     handle = kernel32.CreateMutexW(None, False, name)
     already_running.handle = handle  # mantém o handle vivo enquanto o processo existir
     return ctypes.get_last_error() == ERROR_ALREADY_EXISTS
+
+
+class ShowSignal:
+    """Evento nomeado do Windows pelo qual uma segunda execução do exe pede à primeira que
+    mostre a janela (ela pode estar escondida na bandeja)."""
+
+    def __init__(self, name: str) -> None:
+        """Cria o evento com reinício automático: cada sinal é consumido por um único poll."""
+        self.handle = kernel32.CreateEventW(None, False, False, name)
+        if not self.handle:
+            raise ctypes.WinError(ctypes.get_last_error())
+
+    def poll(self) -> bool:
+        """True se houve pedido desde o último poll; não bloqueia."""
+        return kernel32.WaitForSingleObject(self.handle, 0) == WAIT_OBJECT_0
+
+
+def signal_show(name: str) -> bool:
+    """Pede à instância em execução que mostre a janela; False se nenhuma estiver ouvindo."""
+    handle = kernel32.OpenEventW(EVENT_MODIFY_STATE, False, name)
+    if not handle:
+        return False
+    try:
+        # Quem tem o foco é esta execução (o usuário acabou de abri-la): ela cede o direito de
+        # ir para o primeiro plano, senão o Windows devolve a janela sem foco de teclado.
+        user32.AllowSetForegroundWindow(ASFW_ANY)
+        return bool(kernel32.SetEvent(handle))
+    finally:
+        kernel32.CloseHandle(handle)
 
 
 def screen_size() -> tuple[int, int]:

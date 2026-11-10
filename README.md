@@ -8,7 +8,9 @@ Mira fixa externa para FiveM e outros jogos no Windows. Desenha a mira no centro
 2. No FiveM, vá em Configurações → Gráficos e coloque o modo de exibição em **Janela sem bordas** (Borderless). Em tela cheia exclusiva o Windows não deixa nenhum programa desenhar por cima do jogo.
 3. Clique em **Ativar mira** ou aperte **F9** (o atalho pode ser trocado em Configurações).
 
-Para a mira continuar na tela, deixe o programa aberto ou minimizado. Fechar a janela desliga a mira.
+Fechar a janela não encerra o programa: ele vai para a área de notificação (ao lado do relógio, às vezes escondido na setinha `^`), e a mira e o atalho continuam funcionando. Clique no ícone para abrir a janela de novo. Para fechar de vez, clique com o botão direito no ícone e escolha **Sair**. Abrir o exe outra vez também traz a janela de volta.
+
+Para o ícone ficar sempre visível ao lado do relógio, arraste-o da setinha `^` para a barra.
 
 ## O que dá para fazer
 
@@ -65,5 +67,6 @@ Testes: `.\.venv\Scripts\pip install pytest` e depois `.\.venv\Scripts\python -m
 | `pontozero/crosshair.py` | Modelo da mira, validação dos dados importados e o renderizador (Pillow, com antialiasing por supersampling). O mesmo desenho alimenta a pré-visualização e o overlay. |
 | `pontozero/overlay.py` | Janela Win32 com transparência por pixel (`UpdateLayeredWindow`). Os cliques passam por ela, ela fica sempre no topo e não aparece no Alt+Tab. |
 | `pontozero/fivem.py` | Conversão dos comandos `cl_crosshair*` do FiveM. |
+| `pontozero/tray.py` | Ícone na área de notificação (pystray). Os cliques viram comandos numa fila que a interface lê, porque o Tk não aceita chamadas de outra thread. |
 | `pontozero/storage.py` | Configuração em `%APPDATA%` e importação/exportação de presets. |
 | `pontozero/app.py` | Interface (CustomTkinter). |

@@ -14,6 +14,7 @@ if (-not (Test-Path .venv)) {
     --icon assets\icon.ico `
     --add-data "assets\icon.ico;assets" `
     --collect-data customtkinter `
+    --hidden-import pystray._win32 `
     --exclude-module numpy --exclude-module unittest --exclude-module pydoc `
     run.py
 
